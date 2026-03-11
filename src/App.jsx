@@ -158,6 +158,7 @@ function AppShell() {
               <LiveInterview
                 onFinishInterview={handleFinishInterview}
                 analysis={analysis}
+                jobDescription={jobDescription}
               />
             </ProtectedRoute>
           }

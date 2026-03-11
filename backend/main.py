@@ -104,11 +104,11 @@ async def generate_scorecard(data: dict):
 
 # WebSocket endpoint for Live Interview
 @app.websocket("/ws/interview")
-async def websocket_endpoint(websocket: WebSocket):
+async def websocket_endpoint(websocket: WebSocket, role: str = "Senior AI Engineer", name: str = "Candidate", skills: str = ""):
     await websocket.accept()
     
     # Initialize Interviewer Agent state for this connection
-    agent = InterviewerAgent()
+    agent = InterviewerAgent(role_context=role, candidate_name=name, skills=skills)
     
     try:
         # Send initial greeting

@@ -110,9 +110,11 @@ def generate_questions(analysis: dict):
         ]
 
 class InterviewerAgent:
-    def __init__(self, role_context: str = "Senior AI Engineer"):
+    def __init__(self, role_context: str = "Senior AI Engineer", candidate_name: str = "Candidate", skills: str = ""):
         self.history = []
         self.role_context = role_context
+        self.candidate_name = candidate_name
+        self.skills = skills
         
     def generate_response(self, candidate_input: str) -> str:
         self.history.append({"role": "candidate", "content": candidate_input})
@@ -125,9 +127,11 @@ class InterviewerAgent:
         history_str = "\n".join([f"{msg['role']}: {msg['content']}" for msg in self.history[-5:]]) # Keep context short
         
         prompt = PromptTemplate(
-            input_variables=["history", "role_context"],
+            input_variables=["history", "role_context", "candidate_name", "skills"],
             template="""
             You are an AI conducting an interview for a {role_context} position.
+            The candidate's name is {candidate_name}.
+            Their parsed skills are: {skills}.
             Below is the recent conversation history. Respond as the interviewer to the candidate's latest message.
             Keep your response concise, conversational, and professional (1-2 sentences). Ask ONE follow-up question if appropriate.
             IMPORTANT: The candidate's input is transcribed by a Speech-to-Text engine. It may contain phonetic misspellings, grammar errors, or incorrect homophones. Do NOT correct their spelling. Infer their intent and respond naturally based on the technical context.
@@ -141,7 +145,12 @@ class InterviewerAgent:
         
         try:
             chain = prompt | llm_text
-            response = chain.invoke({"history": history_str, "role_context": self.role_context})
+            response = chain.invoke({
+                "history": history_str, 
+                "role_context": self.role_context,
+                "candidate_name": self.candidate_name,
+                "skills": self.skills
+            })
             reply = response.strip()
             self.history.append({"role": "interviewer", "content": reply})
             return reply

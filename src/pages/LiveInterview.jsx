@@ -1,7 +1,7 @@
 import { useEffect, useState, useRef } from "react"
 import { Mic, MicOff, Square } from "lucide-react"
 
-export default function LiveInterview({ onFinishInterview, analysis }) {
+export default function LiveInterview({ onFinishInterview, analysis, jobDescription }) {
   const [secondsElapsed, setSecondsElapsed] = useState(0)
   const [metrics, setMetrics] = useState({
     clarity: 72,
@@ -26,7 +26,13 @@ export default function LiveInterview({ onFinishInterview, analysis }) {
 
   // Initialize WebSocket
   useEffect(() => {
-    const socket = new WebSocket("ws://localhost:8000/ws/interview")
+    const params = new URLSearchParams({
+      role: jobDescription || analysis?.role || "Software Engineer",
+      name: analysis?.name || "Candidate",
+      skills: analysis?.skills?.join(", ") || ""
+    }).toString()
+    
+    const socket = new WebSocket(`ws://localhost:8000/ws/interview?${params}`)
     
     socket.onopen = () => console.log("WebSocket connected")
     
