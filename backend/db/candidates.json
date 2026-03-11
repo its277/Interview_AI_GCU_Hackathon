@@ -1,0 +1,20 @@
+[
+  {
+    "id": "1",
+    "name": "Debaraj Roy",
+    "exp": "Software Engineer",
+    "score": 50,
+    "status": "Interviewed",
+    "verdict": "Pass",
+    "timestamp": "2026-03-11T21:30:38.833391"
+  },
+  {
+    "id": "2",
+    "name": "Joy Kumar Das",
+    "exp": "Software Engineer",
+    "score": 50,
+    "status": "Interviewed",
+    "verdict": "Pass",
+    "timestamp": "2026-03-11T21:25:36.985913"
+  }
+]

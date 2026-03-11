@@ -1,33 +1,4 @@
-const data = [
-  {
-    name: "Arjun Sharma",
-    exp: "6 yrs experience",
-    score: 91,
-    status: "Interviewed",
-    verdict: "Strong Hire",
-  },
-  {
-    name: "Priya Nath",
-    exp: "4 yrs experience",
-    score: 78,
-    status: "LIVE",
-    verdict: "Hire",
-  },
-  {
-    name: "Rohit Das",
-    exp: "3 yrs experience",
-    score: 64,
-    status: "Interviewed",
-    verdict: "Maybe",
-  },
-  {
-    name: "Sneha Bora",
-    exp: "2 yrs experience",
-    score: 55,
-    status: "Pending",
-    verdict: "-",
-  },
-]
+import { useState, useEffect } from "react"
 
 const statusStyles = {
   LIVE: "bg-emerald-500/15 text-emerald-300 border-emerald-400/40",
@@ -36,6 +7,22 @@ const statusStyles = {
 }
 
 export default function CandidateTable(){
+  const [data, setData] = useState([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    fetch('http://localhost:8000/api/candidates')
+      .then(res => res.json())
+      .then(json => {
+        // Sort newest first
+        if (Array.isArray(json)) {
+          const sorted = json.sort((a,b) => new Date(b.timestamp) - new Date(a.timestamp))
+          setData(sorted)
+        }
+      })
+      .catch(err => console.error("Error fetching candidates:", err))
+      .finally(() => setLoading(false))
+  }, [])
 
 return(
 
