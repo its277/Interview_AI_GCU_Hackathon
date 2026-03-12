@@ -179,7 +179,21 @@ export default function LiveInterview({ onFinishInterview, analysis }) {
 
   // Initialize WebSocket
   useEffect(() => {
-    const socket = new WebSocket("ws://localhost:8000/ws/interview")
+    // Safely extract context from the analysis object
+    const name = encodeURIComponent(analysis?.candidateName || "Candidate");
+    const role = encodeURIComponent(analysis?.candidateRole || "Senior AI Engineer");
+    
+    // Skills might be saved differently depending on the parser. Try to extract a flat string.
+    let flatSkills = "";
+    if (analysis?.skills?.matched && Array.isArray(analysis.skills.matched)) {
+      flatSkills = analysis.skills.matched.join(", ");
+    } else if (typeof analysis?.skills === 'string') {
+      flatSkills = analysis.skills;
+    }
+    const skills = encodeURIComponent(flatSkills);
+
+    const wsUrl = `ws://localhost:8000/ws/interview?name=${name}&role=${role}&skills=${skills}`;
+    const socket = new WebSocket(wsUrl);
     
     socket.onopen = () => console.log("WebSocket connected")
     
