@@ -1,3 +1,5 @@
+
+import { useEffect, useState } from "react"
 import StatCard from "../components/StatCard"
 import CandidateTable from "../components/CandidateTable"
 import CandidatePanel from "../components/CandidatePanel"
@@ -12,7 +14,37 @@ export default function Dashboard({
   onResumeChange,
   isAnalyzing,
 }){
+
   const { userRole } = useAuth();
+
+  const [candidates, setCandidates] = useState([])
+  const [avgScore, setAvgScore] = useState(0)
+  const [topCandidate, setTopCandidate] = useState(null)
+
+  useEffect(() => {
+    fetch("http://127.0.0.1:8000/api/candidates")
+      .then(res => res.json())
+      .then(data => {
+
+        setCandidates(data)
+
+        if(data.length > 0){
+
+          // average score
+          const totalScore = data.reduce((sum, c) => sum + (c.score || 0), 0)
+          setAvgScore(Math.round(totalScore / data.length))
+
+          // highest score candidate
+          const best = data.reduce((prev, current) => {
+            return (current.score || 0) > (prev.score || 0) ? current : prev
+          })
+
+          setTopCandidate(best)
+        }
+
+      })
+      .catch(err => console.error("Error fetching candidates:", err))
+  }, [])
 
   if (userRole === 'candidate') {
     return (
@@ -47,25 +79,53 @@ export default function Dashboard({
 
   return(
     <div className="px-10 py-8 space-y-8">
+
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <StatCard title="Total Applications" value="248" sub="+24 today"/>
-        <StatCard title="Interviews Done" value="61" sub="This week"/>
-        <StatCard title="Avg Fit Score" value="74%" sub="+3% vs last week"/>
-        <StatCard title="Time Saved" value="142h" sub="vs manual review"/>
+
+        <StatCard 
+          title="Total Applications" 
+          value={candidates.length} 
+          sub="From database"
+        />
+
+        <StatCard 
+          title="Interviews Done" 
+          value={candidates.filter(c => c.status === "Interviewed").length} 
+          sub="Completed interviews"
+        />
+
+        <StatCard 
+          title="Avg Fit Score" 
+          value={`${avgScore}%`} 
+          sub="AI evaluation"
+        />
+
+        <StatCard 
+          title="Top Candidate Score" 
+          value={topCandidate ? `${topCandidate.score}%` : "-"} 
+          sub={topCandidate ? topCandidate.name : "No candidates"}
+        />
+
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-6 items-start">
         <div className="xl:col-span-2 space-y-6">
+
           <CandidateTable/>
+
           <div className="grid lg:grid-cols-1 gap-6">
             <JDInput value={jobDescription} onChange={onJobDescriptionChange}/>
           </div>
+
         </div>
 
         <div className="xl:pl-2">
-          <CandidatePanel/>
+          <CandidatePanel candidate={topCandidate}/>
         </div>
+
       </div>
+
     </div>
   )
 }
+
