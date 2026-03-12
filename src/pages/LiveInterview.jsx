@@ -180,13 +180,13 @@ export default function LiveInterview({ onFinishInterview, analysis }) {
   // Initialize WebSocket
   useEffect(() => {
     // Safely extract context from the analysis object
-    const name = encodeURIComponent(analysis?.candidateName || "Candidate");
-    const role = encodeURIComponent(analysis?.candidateRole || "Senior AI Engineer");
+    // aiService.js maps the backend data to simpler UI keys: name, role, skills (array)
+    const name = encodeURIComponent(analysis?.name || "Candidate");
+    const role = encodeURIComponent(analysis?.role || "Senior AI Engineer");
     
-    // Skills might be saved differently depending on the parser. Try to extract a flat string.
     let flatSkills = "";
-    if (analysis?.skills?.matched && Array.isArray(analysis.skills.matched)) {
-      flatSkills = analysis.skills.matched.join(", ");
+    if (Array.isArray(analysis?.skills)) {
+      flatSkills = analysis.skills.join(", ");
     } else if (typeof analysis?.skills === 'string') {
       flatSkills = analysis.skills;
     }
