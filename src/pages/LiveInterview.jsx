@@ -15,6 +15,11 @@ export default function LiveInterview({ onFinishInterview, analysis }) {
   const [isRecording, setIsRecording] = useState(false)
   const [aiIsSpeaking, setAiIsSpeaking] = useState(false)
   const [proctorWarning, setProctorWarning] = useState(null)
+
+  // Proctoring warning system
+  const [warningCount, setWarningCount] = useState(0)
+  const MAX_WARNINGS = 3
+  const [showTerminationOverlay, setShowTerminationOverlay] = useState(false)
   
   const mediaRecorderRef = useRef(null)
   const audioChunksRef = useRef([])
@@ -23,7 +28,33 @@ export default function LiveInterview({ onFinishInterview, analysis }) {
   const requestRef = useRef(null)
   const lastVideoTimeRef = useRef(-1)
   const lookingAwayStartRef = useRef(null)
+  const warnedThisAbsenceRef = useRef(false)   // ← key fix: one warning per absence period
   const proctorStreamRef = useRef(null)
+
+  // Termination handler
+  const handleTerminateInterview = () => {
+    setShowTerminationOverlay(true)
+    
+    // Stop recording if active
+    if (isRecording && mediaRecorderRef.current) {
+      mediaRecorderRef.current.stop()
+      setIsRecording(false)
+    }
+
+    // Notify backend (optional)
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({
+        type: "terminate",
+        reason: "proctoring_violation_face_out",
+        warnings: warningCount + 1
+      }))
+    }
+
+    // Delay then finish interview
+    setTimeout(() => {
+      onFinishInterview?.()
+    }, 4000)
+  }
 
   const processVideoFrame = () => {
     if (!videoRef.current || !faceLandmarkerRef.current) return
@@ -33,15 +64,15 @@ export default function LiveInterview({ onFinishInterview, analysis }) {
       lastVideoTimeRef.current = video.currentTime
       const results = faceLandmarkerRef.current.detectForVideo(video, performance.now())
       
+      let currentWarning = null
+
       if (results.faceLandmarks) {
         if (results.faceLandmarks.length === 0) {
-          setProctorWarning("Face Not Detected")
-          lookingAwayStartRef.current = null
+          currentWarning = "Face Not Detected"
         } else if (results.faceLandmarks.length > 1) {
-          setProctorWarning("Multiple People Detected")
-          lookingAwayStartRef.current = null
+          currentWarning = "Multiple People Detected"
         } else {
-          // One face detected, check head pose
+          // One face detected → check head pose
           const landmarks = results.faceLandmarks[0]
           const nose = landmarks[1]
           const left = landmarks[234]
@@ -55,18 +86,44 @@ export default function LiveInterview({ onFinishInterview, analysis }) {
           const isLookingAway = yawRatio < 0.25 || yawRatio > 0.75 || pitchRatio < 0.3 || pitchRatio > 0.75
 
           if (isLookingAway) {
-            if (!lookingAwayStartRef.current) {
-              lookingAwayStartRef.current = Date.now()
-            } else if (Date.now() - lookingAwayStartRef.current > 3000) {
-              setProctorWarning("Looking Away")
-            }
-          } else {
-            lookingAwayStartRef.current = null
-            setProctorWarning(null)
+            currentWarning = "Looking Away"
           }
         }
       }
+
+      setProctorWarning(currentWarning)
+
+      // Warning & Termination Logic
+      if (currentWarning) {
+        // Absence / bad pose detected
+        if (!lookingAwayStartRef.current) {
+          lookingAwayStartRef.current = Date.now()
+          warnedThisAbsenceRef.current = false
+        }
+
+        const awayDuration = Date.now() - lookingAwayStartRef.current
+
+        if (awayDuration > 3500 && !warnedThisAbsenceRef.current) {
+          warnedThisAbsenceRef.current = true
+
+          setWarningCount(prev => {
+            const newCount = prev + 1
+            setProctorWarning(`Warning ${newCount}/${MAX_WARNINGS}: Keep face visible`)
+
+            if (newCount >= MAX_WARNINGS) {
+              handleTerminateInterview()
+            }
+
+            return newCount
+          })
+        }
+      } else {
+        // Face is visible again → reset
+        lookingAwayStartRef.current = null
+        warnedThisAbsenceRef.current = false
+      }
     }
+
     requestRef.current = requestAnimationFrame(processVideoFrame)
   }
 
@@ -147,7 +204,6 @@ export default function LiveInterview({ onFinishInterview, analysis }) {
           }])
         }
         else if (message.type === "audio") {
-          // Play received audio (TTS)
           const audioSrc = `data:audio/wav;base64,${message.data}`
           const audio = new Audio(audioSrc)
           audio.play().catch(e => console.error("Error playing audio:", e))
@@ -183,7 +239,6 @@ export default function LiveInterview({ onFinishInterview, analysis }) {
 
       mediaRecorder.onstop = () => {
         const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' })
-        // Send blob to websocket as ArrayBuffer
         if (ws && ws.readyState === WebSocket.OPEN) {
           audioBlob.arrayBuffer().then(buffer => {
             ws.send(buffer)
@@ -217,18 +272,25 @@ export default function LiveInterview({ onFinishInterview, analysis }) {
   const seconds = String(secondsElapsed % 60).padStart(2, "0")
   const elapsedLabel = `${minutes}:${seconds}`
   
-  // Get the latest AI question for the big display
   const lastAiMessage = [...transcript].reverse().find(t => t.speaker === 'AI')
   const currentQuestionText = lastAiMessage ? lastAiMessage.text : "Waiting for AI..."
 
   return (
-    <div className="px-10 py-8 grid grid-cols-1 xl:grid-cols-[minmax(0,2.2fr)_minmax(0,1fr)] gap-8 items-start">
+    <div className="px-10 py-8 grid grid-cols-1 xl:grid-cols-[minmax(0,2.2fr)_minmax(0,1fr)] gap-8 items-start relative">
       <div className="space-y-6">
         
-        {/* Video element for MediaPipe process and user feedback */}
+        {/* Video preview with warning counter */}
         <div className="fixed bottom-8 right-8 z-50 rounded-2xl overflow-hidden border-2 border-slate-700 shadow-2xl bg-slate-900 w-48 aspect-video">
           <video ref={videoRef} playsInline autoPlay muted className="w-full h-full object-cover -scale-x-100" />
+          
+          {warningCount > 0 && (
+            <div className="absolute top-2 right-2 bg-red-600/90 text-white text-xs font-bold px-2.5 py-1 rounded-full shadow-lg z-10">
+              Warning {warningCount}/{MAX_WARNINGS}
+            </div>
+          )}
         </div>
+
+        {/* Proctoring warning banner */}
         {proctorWarning && (
           <div className="bg-amber-500/10 border border-amber-500/30 rounded-2xl p-4 flex items-center gap-4 animate-in fade-in slide-in-from-top-4 shadow-[0_10px_30px_rgba(245,158,11,0.15)]">
             <div className="h-10 w-10 rounded-full bg-amber-500/20 flex flex-shrink-0 items-center justify-center text-amber-500">
@@ -237,6 +299,24 @@ export default function LiveInterview({ onFinishInterview, analysis }) {
             <div>
               <p className="text-sm font-semibold text-amber-500">Proctoring Alert</p>
               <p className="text-sm text-amber-200/80">{proctorWarning}</p>
+            </div>
+          </div>
+        )}
+
+        {/* Termination overlay */}
+        {showTerminationOverlay && (
+          <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 backdrop-blur-sm">
+            <div className="bg-slate-900 border border-rose-600/50 rounded-2xl p-10 max-w-md text-center shadow-2xl">
+              <AlertTriangle className="h-16 w-16 text-rose-500 mx-auto mb-6 animate-pulse" />
+              <h2 className="text-2xl font-bold text-rose-300 mb-4">
+                Interview Terminated
+              </h2>
+              <p className="text-slate-300 mb-6">
+                You exceeded the allowed number of warnings for leaving the camera frame.
+              </p>
+              <p className="text-slate-400 text-sm">
+                The session has been automatically ended.
+              </p>
             </div>
           </div>
         )}
@@ -326,7 +406,6 @@ export default function LiveInterview({ onFinishInterview, analysis }) {
             </div>
 
             <div className="flex-1 overflow-y-auto space-y-4 pr-1 custom-scroll flex flex-col-reverse">
-              {/* Flex row-reverse trick to keep scroll at bottom */}
               <div className="space-y-4">
                 {transcript.map((entry, idx) => (
                   <div key={idx} className="text-sm leading-relaxed">
@@ -406,4 +485,3 @@ export default function LiveInterview({ onFinishInterview, analysis }) {
     </div>
   )
 }
-

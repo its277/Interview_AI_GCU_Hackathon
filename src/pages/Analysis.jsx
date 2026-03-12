@@ -1,8 +1,18 @@
-import { useEffect, useState } from "react"
-import ResumeAnalysisCard from "../components/ResumeAnalysisCard"
-import SkillBar from "../components/SkillBar"
-import QuestionList from "../components/QuestionList"
-import { AlertTriangle } from "lucide-react"
+import { useEffect, useState, useMemo } from "react";
+import ResumeAnalysisCard from "../components/ResumeAnalysisCard";
+import SkillBar from "../components/SkillBar";
+import QuestionList from "../components/QuestionList";
+import {
+  AlertTriangle,
+  RefreshCw,
+  Users,
+  BarChart3,
+  Award,
+  User,
+  Calendar,
+  CheckCircle,
+  Clock,
+} from "lucide-react";
 
 export default function Analysis({
   jobDescription,
@@ -14,159 +24,339 @@ export default function Analysis({
   stage,
   onStartInterview,
 }) {
+  const [candidates, setCandidates] = useState([]);
+  const [selectedCandidateId, setSelectedCandidateId] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [loadingStep, setLoadingStep] = useState(0);
 
-  const [loadingStep, setLoadingStep] = useState(0)
+  const loadingMessages = [
+    "Fetching all candidates...",
+    "Loading performance metrics...",
+    "Calculating skill breakdowns...",
+    "Preparing detailed view...",
+  ];
 
-  const loadingSteps = [
-    "Parsing resume…",
-    "Extracting skills…",
-    "Matching with job description…",
-    "Generating interview questions…",
-  ]
+  // ────────────────────────────────────────────────
+  //  Fetch & Refresh Logic
+  // ────────────────────────────────────────────────
+
+  const fetchCandidates = async () => {
+    setLoading(true);
+    setError(null);
+
+    try {
+      const res = await fetch("http://127.0.0.1:8000/api/candidates");
+      if (!res.ok) throw new Error(`Server responded: ${res.status}`);
+      const data = await res.json();
+
+      if (!Array.isArray(data)) {
+        throw new Error("Invalid response format – expected array");
+      }
+
+      setCandidates(data);
+
+      // Auto-select best candidate if nothing is selected
+      if (data.length > 0 && !selectedCandidateId) {
+        const sortedByScore = [...data].sort((a, b) => (b.score || 0) - (a.score || 0));
+        setSelectedCandidateId(sortedByScore[0]?.id || data[data.length - 1]?.id);
+      }
+    } catch (err) {
+      console.error("Candidates fetch failed:", err);
+      setError("Failed to load candidates. Please check if backend is running.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchCandidates();
+  }, []);
+
+  // ────────────────────────────────────────────────
+  //  Analyzing animation
+  // ────────────────────────────────────────────────
 
   useEffect(() => {
     if (!isAnalyzing) {
-      setLoadingStep(0)
-      return
+      setLoadingStep(0);
+      return;
     }
-    setLoadingStep(0)
-    const interval = setInterval(() => {
-      setLoadingStep((prev) => {
-        if (prev >= loadingSteps.length - 1) return prev
-        return prev + 1
-      })
-    }, 600)
-    return () => clearInterval(interval)
-  }, [isAnalyzing])
 
-  const showEmptyState = !resumeFile
+    const timer = setInterval(() => {
+      setLoadingStep((prev) => Math.min(prev + 1, loadingMessages.length - 1));
+    }, 900);
+
+    return () => clearInterval(timer);
+  }, [isAnalyzing]);
+
+  // ────────────────────────────────────────────────
+  //  Derived values
+  // ────────────────────────────────────────────────
+
+  const selectedCandidate = useMemo(
+    () => candidates.find((c) => c.id === selectedCandidateId) || null,
+    [candidates, selectedCandidateId]
+  );
+
+  const stats = useMemo(() => {
+    if (candidates.length === 0) {
+      return { total: 0, avgScore: 0, topScore: 0, interviewed: 0 };
+    }
+
+    const scores = candidates.map((c) => Number(c.score) || 0);
+    const avg = Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) || 0;
+    const top = Math.max(...scores) || 0;
+    const interviewed = candidates.filter((c) => c.status?.toLowerCase().includes("interview")).length;
+
+    return { total: candidates.length, avgScore: avg, topScore: top, interviewed };
+  }, [candidates]);
+
+  const skills = useMemo(() => {
+    if (!selectedCandidate) return [];
+
+    const fallback = analysis?.scorecard?.skills || {};
+
+    return [
+      { label: "Technical Depth", value: selectedCandidate.interview?.technical ?? fallback.technical ?? 70 },
+      { label: "Communication", value: selectedCandidate.interview?.communication ?? fallback.communication ?? 65 },
+      { label: "Problem Solving", value: selectedCandidate.interview?.problem_solving ?? fallback.problemSolving ?? 68 },
+      { label: "Culture Fit", value: selectedCandidate.interview?.culture ?? fallback.cultureAdd ?? 72 },
+      { label: "Experience Match", value: fallback.experienceMatch ?? 75 },
+    ];
+  }, [selectedCandidate, analysis]);
+
+  const showEmptyState = candidates.length === 0 && !resumeFile && !isAnalyzing;
+
+  // ────────────────────────────────────────────────
+  //  Render
+  // ────────────────────────────────────────────────
 
   if (showEmptyState) {
     return (
-
-    <div className="px-10 py-16 flex flex-col items-center text-center gap-4">
-      <div className="inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-slate-900 border border-slate-700 text-amber-300">
-        <AlertTriangle className="h-5 w-5" />
+      <div className="min-h-[60vh] flex flex-col items-center justify-center px-6 text-center">
+        <AlertTriangle className="h-16 w-16 text-amber-500 mb-6" />
+        <h2 className="text-2xl font-bold text-slate-100 mb-3">No Candidates Yet</h2>
+        <p className="text-slate-400 max-w-md mb-8">
+          Upload resumes and add job descriptions from the Dashboard to start seeing AI-powered analysis and performance insights.
+        </p>
+        <button
+          onClick={() => window.history.back()}
+          className="px-6 py-3 bg-teal-600 hover:bg-teal-500 text-white rounded-xl font-medium transition-colors"
+        >
+          Go to Dashboard
+        </button>
       </div>
-      <h2 className="text-lg font-semibold text-slate-50">
-        Upload a resume from the dashboard
-      </h2>
-      <p className="max-w-md text-sm text-slate-400">
-        Paste a job description and upload a candidate resume on the main dashboard.
-        We&apos;ll bring you back here to simulate how InterviewAI parses and understands it.
-      </p>
-    </div>
-
-    )
+    );
   }
 
-  const isReady = stage === "ready"
-
   return (
-
-  <div className="px-10 py-8 grid grid-cols-1 xl:grid-cols-[minmax(0,2.1fr)_minmax(0,1.1fr)] gap-8 items-start">
-
-    <div className="space-y-6">
-
-      <div className="flex flex-col gap-4 md:flex-row md:items-start">
-
-        {!isAnalyzing && (
-          <div className="flex-1 min-w-0">
-            <ResumeAnalysisCard analysis={analysis}/>
-          </div>
-        )}
-
-        <div className="w-full max-w-xs space-y-3">
-          <button
-            type="button"
-            disabled={isAnalyzing || !jobDescription || !resumeFile}
-            onClick={onAnalyze}
-            className="w-full rounded-xl bg-teal-500 text-slate-950 text-xs font-semibold py-3 shadow-lg shadow-teal-500/40 hover:bg-teal-400 disabled:opacity-60 disabled:cursor-not-allowed transition-colors"
-          >
-            {isAnalyzing ? "Running AI analysis…" : analysis ? "Re-run AI analysis" : "Run AI resume analysis"}
-          </button>
-          <button
-            type="button"
-            disabled={!isReady}
-            onClick={onStartInterview}
-            className="w-full rounded-xl border border-slate-700 bg-slate-950/80 text-xs font-semibold py-3 text-slate-100 hover:border-teal-400/60 hover:text-teal-200 disabled:opacity-60 disabled:cursor-not-allowed transition-colors"
-          >
-            Start AI interview
-          </button>
-          <p className="text-[11px] text-slate-500">
-            We simulate how the model parses the resume, matches it to the JD, and then generates a targeted interview plan.
-          </p>
-        </div>
-
+    <div className="px-6 md:px-10 py-8 space-y-8">
+      {/* Top Statistics */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+        <StatBox icon={Users} title="Total Candidates" value={stats.total} color="teal" />
+        <StatBox icon={BarChart3} title="Average Score" value={`${stats.avgScore}%`} color="emerald" />
+        <StatBox icon={Award} title="Top Score" value={`${stats.topScore}%`} color="amber" />
+        <StatBox icon={CheckCircle} title="Interviewed" value={stats.interviewed} color="cyan" />
       </div>
 
-      {isAnalyzing && (
-        <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-5 shadow-[0_18px_45px_rgba(15,23,42,0.85)] text-xs text-slate-300 space-y-3">
-          <p className="text-[11px] uppercase tracking-wide text-slate-400">
-            AI pipeline
-          </p>
-          <ul className="space-y-1.5">
-            {loadingSteps.map((step, index) => (
-              <li key={step} className="flex items-center gap-2">
-                <span className={`h-1.5 w-1.5 rounded-full ${
-                  index <= loadingStep ? "bg-teal-400" : "bg-slate-600"
-                }`} />
-                <span className={index === loadingStep ? "text-slate-100" : "text-slate-500"}>
-                  {step}
-                </span>
-              </li>
-            ))}
-          </ul>
+      <div className="grid grid-cols-1 xl:grid-cols-[1fr_360px] gap-8">
+        {/* Left column – List + Details */}
+        <div className="space-y-6">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <h1 className="text-2xl font-bold text-slate-50">Candidate Performance Overview</h1>
+            <button
+              onClick={fetchCandidates}
+              disabled={loading}
+              className="flex items-center gap-2 px-5 py-2.5 bg-slate-800 hover:bg-slate-700 rounded-lg text-slate-200 disabled:opacity-50 transition-colors"
+            >
+              <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
+              Refresh
+            </button>
+          </div>
+
+          {error && (
+            <div className="bg-rose-950/50 border border-rose-800/60 rounded-xl p-4 text-rose-300">
+              {error}
+            </div>
+          )}
+
+          {loading ? (
+            <div className="bg-slate-900/70 border border-slate-800 rounded-2xl p-10 text-center">
+              <div className="inline-block animate-spin rounded-full h-10 w-10 border-4 border-slate-700 border-t-teal-500 mb-6" />
+              <p className="text-slate-300 text-lg">{loadingMessages[loadingStep]}</p>
+            </div>
+          ) : candidates.length === 0 ? (
+            <div className="bg-slate-900/70 border border-slate-800 rounded-2xl p-12 text-center">
+              <Users className="h-14 w-14 text-slate-600 mx-auto mb-6" />
+              <h3 className="text-xl font-semibold text-slate-300 mb-2">No candidates found</h3>
+              <p className="text-slate-500">Upload resumes from Dashboard to begin analysis.</p>
+            </div>
+          ) : (
+            <div className="bg-slate-900/70 border border-slate-800 rounded-2xl overflow-hidden shadow-xl max-h-[520px] overflow-y-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-slate-800/80 sticky top-0 z-10">
+                  <tr>
+                    <th className="px-6 py-4 text-left font-medium text-slate-300">Candidate</th>
+                    <th className="px-6 py-4 text-left font-medium text-slate-300">Score</th>
+                    <th className="px-6 py-4 text-left font-medium text-slate-300">Status</th>
+                    <th className="px-6 py-4 text-left font-medium text-slate-300">Date</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {candidates.map((candidate) => {
+                    const isSelected = candidate.id === selectedCandidateId;
+                    const score = Number(candidate.score) || 0;
+                    const scoreColor =
+                      score >= 80 ? "text-emerald-400" :
+                      score >= 65 ? "text-amber-400" :
+                      score > 0   ? "text-rose-400" : "text-slate-500";
+
+                    return (
+                      <tr
+                        key={candidate.id}
+                        onClick={() => setSelectedCandidateId(candidate.id)}
+                        className={`border-b border-slate-800 cursor-pointer transition-colors hover:bg-slate-800/60 ${
+                          isSelected ? "bg-teal-950/40 border-l-4 border-l-teal-500" : ""
+                        }`}
+                      >
+                        <td className="px-6 py-4 font-medium text-slate-200 flex items-center gap-3">
+                          <User className="h-4 w-4 text-slate-500" />
+                          {candidate.name || "Unnamed Candidate"}
+                        </td>
+                        <td className="px-6 py-4">
+                          <span className={`font-bold ${scoreColor}`}>
+                            {score > 0 ? `${score}%` : "—"}
+                          </span>
+                        </td>
+                        <td className="px-6 py-4 text-slate-400">
+                          {candidate.status || (score > 0 ? "Evaluated" : "Pending")}
+                        </td>
+                        <td className="px-6 py-4 text-slate-500 text-xs">
+                          {candidate.date
+                            ? new Date(candidate.date).toLocaleDateString()
+                            : "—"}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {/* Selected candidate details */}
+          {selectedCandidate && !isAnalyzing && (
+            <div className="space-y-6 pt-4">
+              <ResumeAnalysisCard analysis={selectedCandidate.analysis || analysis} />
+              <QuestionList questions={selectedCandidate.questions || questions || []} />
+            </div>
+          )}
+
+          {isAnalyzing && (
+            <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-6 mt-6">
+              <h3 className="text-lg font-semibold text-slate-200 mb-5">Processing New Resume</h3>
+              <div className="space-y-4">
+                {loadingMessages.map((msg, idx) => (
+                  <div key={msg} className="flex items-center gap-3">
+                    <div
+                      className={`h-3 w-3 rounded-full transition-all duration-300 ${
+                        idx <= loadingStep ? "bg-teal-400 scale-125" : "bg-slate-700"
+                      }`}
+                    />
+                    <span className={idx === loadingStep ? "text-teal-300 font-medium" : "text-slate-500"}>
+                      {msg}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
-      )}
 
-      {!isAnalyzing && <QuestionList questions={questions}/>}
+        {/* Right sidebar – Selected candidate summary */}
+        <aside className="space-y-6">
+          {selectedCandidate ? (
+            <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-6 shadow-lg">
+              <div className="flex justify-between items-start mb-6">
+                <div>
+                  <h3 className="text-xl font-bold text-slate-100">
+                    {selectedCandidate.name || "Selected Candidate"}
+                  </h3>
+                  <p className="text-sm text-slate-400 mt-1">
+                    {selectedCandidate.date ? new Date(selectedCandidate.date).toLocaleDateString() : "—"}
+                  </p>
+                </div>
+                <div className="text-right">
+                  <div className={`text-3xl font-bold ${selectedCandidate.score >= 80 ? "text-emerald-400" : selectedCandidate.score >= 65 ? "text-amber-400" : "text-rose-400"}`}>
+                    {selectedCandidate.score ? `${selectedCandidate.score}%` : "—"}
+                  </div>
+                  <p className="text-xs text-slate-500">Overall Score</p>
+                </div>
+              </div>
 
+              <div className="space-y-4 mb-6">
+                {skills.map((skill) => (
+                  <SkillBar key={skill.label} label={skill.label} value={skill.value} />
+                ))}
+              </div>
+
+              <button
+                type="button"
+                disabled={stage !== "ready"}
+                onClick={() => onStartInterview?.(selectedCandidate)}
+                className="w-full py-3.5 px-6 rounded-xl bg-gradient-to-r from-teal-600 to-emerald-600 hover:from-teal-500 hover:to-emerald-500 text-white font-semibold shadow-lg shadow-teal-500/20 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+              >
+                {stage === "ready" ? "Start / Continue Interview" : "Interview not ready"}
+              </button>
+            </div>
+          ) : (
+            <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-10 text-center py-20">
+              <User className="h-12 w-12 text-slate-600 mx-auto mb-6" />
+              <h3 className="text-lg font-semibold text-slate-300 mb-2">No candidate selected</h3>
+              <p className="text-slate-500">Click a candidate in the list to view detailed performance</p>
+            </div>
+          )}
+
+          {/* Analyze new resume section */}
+          <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-6">
+            <h3 className="text-lg font-semibold text-slate-200 mb-4">New Resume Analysis</h3>
+            <button
+              type="button"
+              disabled={isAnalyzing || !jobDescription || !resumeFile}
+              onClick={onAnalyze}
+              className="w-full py-3.5 px-6 rounded-xl bg-teal-600 hover:bg-teal-500 text-slate-950 font-semibold shadow-lg disabled:opacity-60 transition-colors"
+            >
+              {isAnalyzing ? "Analyzing..." : "Analyze New Resume"}
+            </button>
+            <p className="text-xs text-slate-500 mt-3 text-center">
+              Upload from Dashboard to add new candidate
+            </p>
+          </div>
+        </aside>
+      </div>
     </div>
-
-    <aside className="space-y-6">
-
-      <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-5 shadow-[0_18px_45px_rgba(15,23,42,0.85)]">
-
-        <div className="flex items-center justify-between mb-4">
-          <p className="text-xs uppercase tracking-wide text-slate-400">
-            Skill breakdown
-          </p>
-          <span className="text-[11px] text-slate-500">
-            Derived from resume + JD
-          </span>
-        </div>
-
-        <div className="space-y-1">
-          <SkillBar label="Technical depth" value={88}/>
-          <SkillBar label="Communication" value={76}/>
-          <SkillBar label="Problem solving" value={82}/>
-          <SkillBar label="Culture add" value={80}/>
-          <SkillBar label="Experience match" value={84}/>
-        </div>
-
-      </div>
-
-      <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-5 shadow-[0_18px_45px_rgba(15,23,42,0.85)] space-y-3 text-xs text-slate-300">
-        <p className="text-[11px] uppercase tracking-wide text-slate-400">
-          Job description context
-        </p>
-        <p className="text-slate-400">
-          We align resume signals with the responsibilities and requirements specified in the JD.
-          For the demo, we keep everything on-device and deterministic.
-        </p>
-        {jobDescription && (
-          <div className="rounded-xl border border-slate-800 bg-slate-950/70 px-3 py-3 max-h-40 overflow-y-auto text-[11px] text-slate-400">
-            {jobDescription}
-          </div>
-        )}
-      </div>
-
-    </aside>
-
-  </div>
-
-  )
-
+  );
 }
 
+// Small helper component for stats cards
+function StatBox({ icon: Icon, title, value, color }) {
+  const colorClasses = {
+    teal: "text-teal-400 bg-teal-950/30 border-teal-900/50",
+    emerald: "text-emerald-400 bg-emerald-950/30 border-emerald-900/50",
+    amber: "text-amber-400 bg-amber-950/30 border-amber-900/50",
+    cyan: "text-cyan-400 bg-cyan-950/30 border-cyan-900/50",
+  };
+
+  return (
+    <div className={`rounded-2xl border p-5 flex items-center gap-4 ${colorClasses[color] || "text-slate-300"}`}>
+      <div className={`p-3 rounded-xl ${colorClasses[color]}`}>
+        <Icon className="h-7 w-7" />
+      </div>
+      <div>
+        <p className="text-xs uppercase tracking-wide text-slate-400">{title}</p>
+        <p className="text-2xl font-bold">{value}</p>
+      </div>
+    </div>
+  );
+}

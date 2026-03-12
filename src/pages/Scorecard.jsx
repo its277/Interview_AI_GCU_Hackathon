@@ -1,234 +1,199 @@
-import SkillBar from "../components/SkillBar"
+import { useEffect, useState } from "react";
+import SkillBar from "../components/SkillBar";
 
-const defaultSkills = [
-  { label: "Technical knowledge", value: 88 },
-  { label: "Communication", value: 81 },
-  { label: "Problem solving", value: 86 },
-  { label: "Cultural fit", value: 84 },
-  { label: "Experience match", value: 83 },
-]
+export default function Scorecard({ analysis }) {
+  const [candidates, setCandidates] = useState([]);
+  const [loading, setLoading] = useState(true);
 
-const defaultQuestions = [
-  {
-    label: "Q1 · Technical depth",
-    area: "Execution & reliability",
-    score: 9.0,
-    level: "Senior",
-    summary: "Structured, observability‑driven approach with clear rollback strategy.",
-  },
-  {
-    label: "Q2 · System design",
-    area: "System design",
-    score: 8.6,
-    level: "Senior",
-    summary: "Good understanding of blast‑radius control and gradual rollout.",
-  },
-  {
-    label: "Q3 · Communication",
-    area: "Collaboration",
-    score: 8.2,
-    level: "Mid‑Senior",
-    summary: "Clear communication with good trade‑off explanations.",
-  },
-  {
-    label: "Q4 · Culture & ownership",
-    area: "Culture",
-    score: 8.9,
-    level: "Senior",
-    summary: "Demonstrates ownership and bias for action on ambiguous work.",
-  },
-  {
-    label: "Q5 · Experience",
-    area: "Career history",
-    score: 8.1,
-    level: "Mid‑Senior",
-    summary: "Solid trajectory with increasing scope and impact.",
-  },
-]
+  /* ---------------- FETCH DATA ---------------- */
 
-export default function Scorecard({ analysis }){
+  const fetchCandidates = async () => {
+    try {
+      const res = await fetch("http://127.0.0.1:8000/api/candidates");
+      const data = await res.json();
 
-return(
+      if (Array.isArray(data)) {
+        setCandidates(data);
+      }
+    } catch (err) {
+      console.error("Error fetching candidates:", err);
+    } finally {
+      setLoading(false);
+    }
+  };
 
-<div className="px-10 py-8 grid grid-cols-1 xl:grid-cols-[minmax(0,2.1fr)_minmax(0,1.1fr)] gap-8 items-start">
+  useEffect(() => {
+    fetchCandidates();
+  }, []);
 
-  <div className="space-y-6">
+  /* ---------------- UI ---------------- */
 
-    <div className="bg-slate-900/70 border border-slate-800 rounded-2xl p-6 flex flex-col md:flex-row md:items-center md:justify-between gap-6 shadow-[0_22px_55px_rgba(15,23,42,0.9)] animate-soft-glow">
+  return (
+    <div className="px-10 py-8 space-y-10">
+      {loading && (
+        <p className="text-sm text-slate-400">Loading scorecards...</p>
+      )}
 
-      <div className="flex items-start gap-4">
+      {!loading && candidates.length === 0 && (
+        <p className="text-sm text-slate-400">No candidates found</p>
+      )}
 
-        <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-teal-400 to-emerald-500 flex items-center justify-center text-slate-950 font-semibold shadow-lg shadow-teal-500/40">
-          AS
-        </div>
+      {candidates.map((candidate) => {
+        /* SAFE DATA PARSING */
 
-        <div>
-          <p className="text-xs uppercase tracking-wide text-slate-400">
-            Candidate scorecard
-          </p>
-          <p className="text-lg font-semibold">
-            {analysis?.name ?? "Arjun Sharma"} · {analysis?.role ?? "Senior Backend Engineer"}
-          </p>
-          <p className="text-xs text-slate-400 mt-1">
-            {analysis?.experience ?? "6 yrs experience · Backend / Platform"}
-          </p>
+        const name = candidate?.name || "Candidate";
+        const role = candidate?.exp || "Applicant";
+        const score = Number(candidate?.score) || 0;
+        const verdict = candidate?.verdict || "Pending";
 
-          <div className="flex flex-wrap gap-2 mt-3 text-[11px]">
-            <span className="px-2.5 py-1 rounded-full bg-slate-800 text-slate-200 border border-slate-700">
-              {analysis?.location ?? "Remote"}
-            </span>
-            <span className="px-2.5 py-1 rounded-full bg-teal-500/15 text-teal-200 border border-teal-400/40">
-              Strong hire signal
-            </span>
-            <span className="px-2.5 py-1 rounded-full bg-emerald-500/10 text-emerald-200 border border-emerald-400/40">
-              {analysis?.skills?.[0] ?? "Key skills aligned"}
-            </span>
-          </div>
-        </div>
+        const initials = name
+          .split(" ")
+          .map((n) => n[0])
+          .join("")
+          .slice(0, 2)
+          .toUpperCase();
 
-      </div>
+        /* Resume Skills Safety */
 
-      <div className="flex flex-col items-end gap-3 min-w-[180px]">
+        let resumeSkills = [];
 
-        <div className="flex items-center gap-3">
-          <div className="relative">
-            <div className="w-20 h-20 rounded-full border-2 border-teal-400/70 bg-slate-950 flex items-center justify-center shadow-[0_0_60px_rgba(45,212,191,0.4)] animate-slow-pulse">
-              <span className="text-3xl font-semibold text-teal-300">
-                {((analysis?.scorecard?.overallScore || 87) / 10).toFixed(1)}
-              </span>
+        if (Array.isArray(candidate?.resume_skills)) {
+          resumeSkills = candidate.resume_skills;
+        } else if (typeof candidate?.resume_skills === "string") {
+          resumeSkills = candidate.resume_skills.split(",");
+        }
+
+        /* Skill calculation */
+
+        const skills = [
+          {
+            label: "Technical knowledge",
+            value: analysis?.scorecard?.skills?.technical ?? score,
+          },
+
+          {
+            label: "Communication",
+            value:
+              analysis?.scorecard?.skills?.communication ??
+              Math.round(score * 0.9),
+          },
+
+          {
+            label: "Problem solving",
+            value:
+              analysis?.scorecard?.skills?.problemSolving ??
+              Math.round(score * 0.95),
+          },
+
+          {
+            label: "Cultural fit",
+            value:
+              analysis?.scorecard?.skills?.culturalFit ??
+              Math.round(score * 0.85),
+          },
+
+          {
+            label: "Experience match",
+            value:
+              analysis?.scorecard?.skills?.experienceMatch ??
+              Math.round(score * 0.9),
+          },
+        ];
+
+        return (
+          <div
+            key={candidate.id || candidate.name}
+            className="grid grid-cols-1 xl:grid-cols-[minmax(0,2.1fr)_minmax(0,1.1fr)] gap-8 items-start"
+          >
+            <div className="space-y-6">
+              <div className="bg-slate-900/70 border border-slate-800 rounded-2xl p-6 flex flex-col md:flex-row md:items-center md:justify-between gap-6 shadow-[0_22px_55px_rgba(15,23,42,0.9)]">
+                <div className="flex items-start gap-4">
+                  <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-teal-400 to-emerald-500 flex items-center justify-center text-slate-950 font-semibold">
+                    {initials}
+                  </div>
+
+                  <div>
+                    <p className="text-xs uppercase tracking-wide text-slate-400">
+                      Candidate scorecard
+                    </p>
+
+                    <p className="text-lg font-semibold">
+                      {name} · {role}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex flex-col items-end gap-3 min-w-[180px]">
+                  <div className="w-20 h-20 rounded-full border-2 border-teal-400/70 bg-slate-950 flex items-center justify-center">
+                    <span className="text-3xl font-semibold text-teal-300">
+                      {(score / 10).toFixed(1)}
+                    </span>
+                  </div>
+
+                  <span className="inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-xs font-medium bg-emerald-500/15 text-emerald-200 border border-emerald-400/50">
+                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
+
+                    {verdict}
+                  </span>
+                </div>
+              </div>
             </div>
-            <div className="absolute inset-1 rounded-full border border-teal-500/30 border-dashed opacity-70 animate-orbit" />
+
+            {/* RIGHT SIDE */}
+
+            <aside className="space-y-6">
+              {/* Skill Breakdown */}
+
+              <div className="bg-slate-900/70 border border-slate-800 rounded-2xl p-6">
+                <div className="flex items-center justify-between mb-4">
+                  <p className="text-xs uppercase tracking-wide text-slate-400">
+                    Skill breakdown
+                  </p>
+
+                  <span className="text-xs text-slate-300">
+                    Derived from resume & interview
+                  </span>
+                </div>
+
+                <div className="space-y-1">
+                  {skills.map((skill) => (
+                    <SkillBar
+                      key={skill.label}
+                      label={skill.label}
+                      value={skill.value}
+                    />
+                  ))}
+                </div>
+              </div>
+
+              {/* Resume Skills */}
+
+              <div className="bg-slate-900/70 border border-slate-800 rounded-2xl p-6">
+                <p className="text-xs uppercase tracking-wide text-slate-400 mb-4">
+                  Parsed resume skills
+                </p>
+
+                {resumeSkills.length > 0 ? (
+                  <div className="flex flex-wrap gap-2">
+                    {resumeSkills.map((skill, i) => (
+                      <span
+                        key={i}
+                        className="text-xs px-3 py-1 rounded-full bg-teal-500/10 border border-teal-400/30 text-teal-200"
+                      >
+                        {skill.trim()}
+                      </span>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-xs text-slate-500">
+                    No skills detected from resume
+                  </p>
+                )}
+              </div>
+            </aside>
           </div>
-          <div className="text-xs text-slate-400 space-y-1">
-            <p className="uppercase tracking-wide text-[10px]">
-              Overall score
-            </p>
-            <p>Generated by AI Agent.</p>
-          </div>
-        </div>
-
-        <span className="inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-xs font-medium bg-emerald-500/15 text-emerald-200 border border-emerald-400/50">
-          <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
-          {analysis?.scorecard?.overallScore > 80 ? "Strong hire · Ready for onsite panel" : "Keep looking · Did not pass"}
-        </span>
-
-      </div>
-
+        );
+      })}
     </div>
-
-    <div className="bg-slate-900/70 border border-slate-800 rounded-2xl p-6 space-y-4 shadow-[0_18px_45px_rgba(15,23,42,0.85)]">
-
-      <div className="flex items-center justify-between">
-        <p className="text-xs uppercase tracking-wide text-slate-400">
-          Interview Feedback
-        </p>
-        <span className="text-[10px] text-slate-500">
-          Automatically generated from live interview
-        </span>
-      </div>
-      
-      <p className="text-sm text-slate-300 leading-relaxed">
-        {analysis?.scorecard?.feedback || "Candidate demonstrated excellent frontend knowledge during the simulated interview."}
-      </p>
-
-      <div className="pt-4 border-t border-slate-800">
-        <p className="text-xs uppercase tracking-wide text-slate-400 mb-3">Areas for Improvement</p>
-        <ul className="list-disc pl-5 text-sm text-amber-200/80 space-y-1">
-          {analysis?.scorecard?.areasForImprovement?.map((area, i) => (
-             <li key={i}>{area}</li>
-          )) || <li>Could elaborate more on system design trade-offs.</li>}
-        </ul>
-      </div>
-
-    </div>
-
-  </div>
-
-  <aside className="space-y-6">
-
-    <div className="bg-slate-900/70 border border-slate-800 rounded-2xl p-6 shadow-[0_18px_45px_rgba(15,23,42,0.85)]">
-
-      <div className="flex items-center justify-between mb-4">
-        <p className="text-xs uppercase tracking-wide text-slate-400">
-          Skill breakdown
-        </p>
-        <span className="text-xs text-slate-300">
-          Role profile · L5/L6
-        </span>
-      </div>
-
-      <div className="space-y-1">
-        {defaultSkills.map(skill => (
-          <SkillBar key={skill.label} label={skill.label} value={skill.value}/>
-        ))}
-      </div>
-
-    </div>
-
-    <div className="bg-slate-900/70 border border-slate-800 rounded-2xl p-6 space-y-4 shadow-[0_18px_45px_rgba(15,23,42,0.85)]">
-
-      <div className="flex items-center justify-between">
-        <p className="text-xs uppercase tracking-wide text-slate-400">
-          Recommendation
-        </p>
-        <span className="text-[10px] text-slate-500">
-          Draft generated by InterviewAI
-        </span>
-      </div>
-
-      <div className="rounded-xl border border-emerald-500/40 bg-emerald-500/10 px-4 py-3 text-xs text-emerald-100 space-y-1">
-        <p className="font-medium text-emerald-200">
-          Move to onsite loop with focus on cross‑team collaboration and long‑term ownership.
-        </p>
-        <p>
-          Strong signal on problem solving, architecture, and partnering with design.
-          Slightly less exposure to extremely large codebases can be deepened post‑hire.
-        </p>
-      </div>
-
-      <div className="grid grid-cols-3 gap-3 text-[11px]">
-        <div className="rounded-xl border border-slate-800 bg-slate-950/70 p-3">
-          <p className="text-slate-400 mb-1">
-            Interviewer confidence
-          </p>
-          <p className="text-lg font-semibold text-emerald-300">
-            92%
-          </p>
-          <p className="text-slate-500 mt-1">
-            Based on rubric alignment and calibration.
-          </p>
-        </div>
-        <div className="rounded-xl border border-slate-800 bg-slate-950/70 p-3">
-          <p className="text-slate-400 mb-1">
-            Role fit
-          </p>
-          <p className="text-lg font-semibold text-teal-300">
-            88%
-          </p>
-          <p className="text-slate-500 mt-1">
-            Maps cleanly to current frontend track.
-          </p>
-        </div>
-        <div className="rounded-xl border border-slate-800 bg-slate-950/70 p-3">
-          <p className="text-slate-400 mb-1">
-            Team risk
-          </p>
-          <p className="text-lg font-semibold text-amber-300">
-            Low‑Mod
-          </p>
-          <p className="text-slate-500 mt-1">
-            Mostly around working in higher‑scale orgs.
-          </p>
-        </div>
-      </div>
-
-    </div>
-
-  </aside>
-
-</div>
-
-)
-
+  );
 }
-
