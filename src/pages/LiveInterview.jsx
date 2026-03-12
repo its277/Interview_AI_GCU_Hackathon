@@ -191,8 +191,9 @@ export default function LiveInterview({ onFinishInterview, analysis }) {
       flatSkills = analysis.skills;
     }
     const skills = encodeURIComponent(flatSkills);
+    const summary = encodeURIComponent(analysis?.summary || "");
 
-    const wsUrl = `ws://localhost:8000/ws/interview?name=${name}&role=${role}&skills=${skills}`;
+    const wsUrl = `ws://localhost:8000/ws/interview?name=${name}&role=${role}&skills=${skills}&summary=${summary}`;
     const socket = new WebSocket(wsUrl);
     
     socket.onopen = () => console.log("WebSocket connected")
@@ -230,8 +231,10 @@ export default function LiveInterview({ onFinishInterview, analysis }) {
     socket.onclose = () => console.log("WebSocket disconnected")
     setWs(socket)
     
-    return () => socket.close()
-  }, [])
+    return () => {
+      socket.close()
+    }
+  }, [analysis])
 
   const startRecording = async () => {
     try {

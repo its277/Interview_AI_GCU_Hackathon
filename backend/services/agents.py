@@ -110,11 +110,12 @@ def generate_questions(analysis: dict):
         ]
 
 class InterviewerAgent:
-    def __init__(self, role_context: str = "Senior AI Engineer", candidate_name: str = "Candidate", skills: str = ""):
+    def __init__(self, role_context: str = "Senior AI Engineer", candidate_name: str = "Candidate", skills: str = "", summary: str = ""):
         self.history = []
         self.role_context = role_context
         self.candidate_name = candidate_name
         self.skills = skills
+        self.summary = summary
         
     def generate_response(self, candidate_input: str) -> str:
         self.history.append({"role": "candidate", "content": candidate_input})
@@ -124,22 +125,32 @@ class InterviewerAgent:
             self.history.append({"role": "interviewer", "content": reply})
             return reply
             
-        history_str = "\n".join([f"{msg['role']}: {msg['content']}" for msg in self.history[-5:]]) # Keep context short
+        history_str = "\n".join([f"{msg['role']}: {msg['content']}" for msg in self.history[-6:]])
         
         prompt = PromptTemplate(
-            input_variables=["history", "role_context", "candidate_name", "skills"],
+            input_variables=["history", "role_context", "candidate_name", "skills", "summary"],
             template="""
-            You are an AI conducting an interview for a {role_context} position.
-            The candidate's name is {candidate_name}.
-            Their parsed skills are: {skills}.
-            Below is the recent conversation history. Respond as the interviewer to the candidate's latest message.
-            Keep your response concise, conversational, and professional (1-2 sentences). Ask ONE follow-up question if appropriate.
-            IMPORTANT: The candidate's input is transcribed by a Speech-to-Text engine. It may contain phonetic misspellings, grammar errors, or incorrect homophones. Do NOT correct their spelling. Infer their intent and respond naturally based on the technical context.
+            You are Aurora, a professional and friendly AI interviewer conducting a real interview.
+            You are interviewing {candidate_name} for a {role_context} position.
             
-            History:
+            Candidate Profile:
+            - Name: {candidate_name}
+            - Applying for: {role_context}
+            - Key Skills: {skills}
+            - Resume Summary: {summary}
+            
+            Use this profile to ask personalized, relevant questions. Address the candidate by their first name naturally.
+            If the candidate asks if you know their name or profile, confidently answer yes and reference their details.
+            
+            Interview Guidelines:
+            - Respond concisely and conversationally (1-3 sentences).
+            - Ask ONE focused follow-up question if appropriate.
+            - IMPORTANT: The candidate's speech is transcribed by STT and may have phonetic errors — infer their intent naturally.
+            
+            Conversation so far:
             {history}
             
-            Interviewer (You):
+            Aurora (You):
             """
         )
         
@@ -149,7 +160,8 @@ class InterviewerAgent:
                 "history": history_str, 
                 "role_context": self.role_context,
                 "candidate_name": self.candidate_name,
-                "skills": self.skills
+                "skills": self.skills,
+                "summary": self.summary or "No resume summary available."
             })
             reply = response.strip()
             self.history.append({"role": "interviewer", "content": reply})

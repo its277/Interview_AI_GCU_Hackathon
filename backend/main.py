@@ -104,15 +104,16 @@ async def generate_scorecard(data: dict):
 
 # WebSocket endpoint for Live Interview
 @app.websocket("/ws/interview")
-async def websocket_endpoint(websocket: WebSocket, role: str = "Senior AI Engineer", name: str = "Candidate", skills: str = ""):
+async def websocket_endpoint(websocket: WebSocket, role: str = "Senior AI Engineer", name: str = "Candidate", skills: str = "", summary: str = ""):
     await websocket.accept()
     
     # Initialize Interviewer Agent state for this connection
-    agent = InterviewerAgent(role_context=role, candidate_name=name, skills=skills)
+    agent = InterviewerAgent(role_context=role, candidate_name=name, skills=skills, summary=summary)
     
     try:
         # Send initial greeting
-        greeting_text = "Hello! I am ready to begin the interview. Let me know when you're ready."
+        first_name = name.split()[0] if name and name != "Candidate" else "there"
+        greeting_text = f"Hello {first_name}! I'm Aurora, your AI interviewer for the {role} position today. Before we begin, could you briefly introduce yourself?"
         agent.history.append({"role": "interviewer", "content": greeting_text})
         
         # Send text
