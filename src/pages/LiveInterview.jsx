@@ -1,5 +1,6 @@
 import { useEffect, useState, useRef } from "react"
-import { Mic, MicOff, Square } from "lucide-react"
+import { Mic, MicOff, Square, AlertTriangle } from "lucide-react"
+import { FaceLandmarker, FilesetResolver } from "@mediapipe/tasks-vision"
 
 export default function LiveInterview({ onFinishInterview, analysis }) {
   const [secondsElapsed, setSecondsElapsed] = useState(0)
@@ -13,9 +14,104 @@ export default function LiveInterview({ onFinishInterview, analysis }) {
   const [transcript, setTranscript] = useState([])
   const [isRecording, setIsRecording] = useState(false)
   const [aiIsSpeaking, setAiIsSpeaking] = useState(false)
+  const [proctorWarning, setProctorWarning] = useState(null)
   
   const mediaRecorderRef = useRef(null)
   const audioChunksRef = useRef([])
+  const videoRef = useRef(null)
+  const faceLandmarkerRef = useRef(null)
+  const requestRef = useRef(null)
+  const lastVideoTimeRef = useRef(-1)
+  const lookingAwayStartRef = useRef(null)
+  const proctorStreamRef = useRef(null)
+
+  const processVideoFrame = () => {
+    if (!videoRef.current || !faceLandmarkerRef.current) return
+
+    const video = videoRef.current
+    if (video.currentTime !== lastVideoTimeRef.current && video.readyState >= 2) {
+      lastVideoTimeRef.current = video.currentTime
+      const results = faceLandmarkerRef.current.detectForVideo(video, performance.now())
+      
+      if (results.faceLandmarks) {
+        if (results.faceLandmarks.length === 0) {
+          setProctorWarning("Face Not Detected")
+          lookingAwayStartRef.current = null
+        } else if (results.faceLandmarks.length > 1) {
+          setProctorWarning("Multiple People Detected")
+          lookingAwayStartRef.current = null
+        } else {
+          // One face detected, check head pose
+          const landmarks = results.faceLandmarks[0]
+          const nose = landmarks[1]
+          const left = landmarks[234]
+          const right = landmarks[454]
+          const top = landmarks[10]
+          const bottom = landmarks[152]
+
+          const yawRatio = (nose.x - left.x) / (right.x - left.x)
+          const pitchRatio = (nose.y - top.y) / (bottom.y - top.y)
+
+          const isLookingAway = yawRatio < 0.25 || yawRatio > 0.75 || pitchRatio < 0.3 || pitchRatio > 0.75
+
+          if (isLookingAway) {
+            if (!lookingAwayStartRef.current) {
+              lookingAwayStartRef.current = Date.now()
+            } else if (Date.now() - lookingAwayStartRef.current > 3000) {
+              setProctorWarning("Looking Away")
+            }
+          } else {
+            lookingAwayStartRef.current = null
+            setProctorWarning(null)
+          }
+        }
+      }
+    }
+    requestRef.current = requestAnimationFrame(processVideoFrame)
+  }
+
+  // Initialize MediaPipe FaceLandmarker and Camera
+  useEffect(() => {
+    let active = true
+    const initFaceLandmarkerAndCamera = async () => {
+      try {
+        const vision = await FilesetResolver.forVisionTasks(
+          "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm"
+        )
+        faceLandmarkerRef.current = await FaceLandmarker.createFromOptions(vision, {
+          baseOptions: {
+            modelAssetPath: "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task",
+            delegate: "GPU"
+          },
+          runningMode: "VIDEO",
+          numFaces: 5,
+        })
+        console.log("FaceLandmarker loaded")
+        
+        if (active) {
+          const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true })
+          proctorStreamRef.current = stream
+          if (videoRef.current) {
+            videoRef.current.srcObject = stream
+            videoRef.current.onloadedmetadata = () => {
+              videoRef.current.play()
+              requestRef.current = requestAnimationFrame(processVideoFrame)
+            }
+          }
+        }
+      } catch (err) {
+        console.error("Error initializing camera & FaceLandmarker:", err)
+      }
+    }
+    initFaceLandmarkerAndCamera()
+
+    return () => {
+      active = false
+      if (faceLandmarkerRef.current) faceLandmarkerRef.current.close()
+      if (requestRef.current) cancelAnimationFrame(requestRef.current)
+      if (proctorStreamRef.current) proctorStreamRef.current.getTracks().forEach(t => t.stop())
+    }
+  }, [])
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -69,8 +165,12 @@ export default function LiveInterview({ onFinishInterview, analysis }) {
 
   const startRecording = async () => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
-      const mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm' })
+      if (!proctorStreamRef.current) {
+        alert("Camera/Microphone stream not ready yet.")
+        return
+      }
+      const audioStream = new MediaStream(proctorStreamRef.current.getAudioTracks())
+      const mediaRecorder = new MediaRecorder(audioStream, { mimeType: 'audio/webm' })
       
       mediaRecorderRef.current = mediaRecorder
       audioChunksRef.current = []
@@ -89,16 +189,12 @@ export default function LiveInterview({ onFinishInterview, analysis }) {
             ws.send(buffer)
           })
         }
-        
-        // Stop all tracks
-        stream.getTracks().forEach(track => track.stop())
       }
 
       mediaRecorder.start()
       setIsRecording(true)
     } catch (error) {
-      console.error("Error accessing microphone:", error)
-      alert("Microphone access is required for the interview.")
+      console.error("Error starting recording:", error)
     }
   }
 
@@ -129,6 +225,22 @@ export default function LiveInterview({ onFinishInterview, analysis }) {
     <div className="px-10 py-8 grid grid-cols-1 xl:grid-cols-[minmax(0,2.2fr)_minmax(0,1fr)] gap-8 items-start">
       <div className="space-y-6">
         
+        {/* Video element for MediaPipe process and user feedback */}
+        <div className="fixed bottom-8 right-8 z-50 rounded-2xl overflow-hidden border-2 border-slate-700 shadow-2xl bg-slate-900 w-48 aspect-video">
+          <video ref={videoRef} playsInline autoPlay muted className="w-full h-full object-cover -scale-x-100" />
+        </div>
+        {proctorWarning && (
+          <div className="bg-amber-500/10 border border-amber-500/30 rounded-2xl p-4 flex items-center gap-4 animate-in fade-in slide-in-from-top-4 shadow-[0_10px_30px_rgba(245,158,11,0.15)]">
+            <div className="h-10 w-10 rounded-full bg-amber-500/20 flex flex-shrink-0 items-center justify-center text-amber-500">
+              <AlertTriangle className="w-5 h-5" />
+            </div>
+            <div>
+              <p className="text-sm font-semibold text-amber-500">Proctoring Alert</p>
+              <p className="text-sm text-amber-200/80">{proctorWarning}</p>
+            </div>
+          </div>
+        )}
+
         <div className="bg-slate-900/70 border border-slate-800 rounded-2xl p-6 flex items-center justify-between shadow-[0_22px_55px_rgba(15,23,42,0.9)]">
           <div className="flex items-center gap-4">
             <div className="h-12 w-12 rounded-xl bg-gradient-to-br from-teal-400 to-emerald-500 flex items-center justify-center text-slate-950 font-semibold shadow-lg shadow-teal-500/40">
