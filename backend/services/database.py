@@ -22,6 +22,10 @@ def add_candidate(candidate_data):
     # Generate a simple ID
     new_id = str(len(candidates) + 1)
     
+    # Extract matched skills list for display in Scorecard
+    skills_data = candidate_data.get("skills", {})
+    matched_skills = skills_data.get("matched", []) if isinstance(skills_data, dict) else []
+
     candidate = {
         "id": new_id,
         "name": candidate_data.get("candidateName", "Candidate " + new_id),
@@ -29,6 +33,7 @@ def add_candidate(candidate_data):
         "score": candidate_data.get("fitScore", 0),
         "status": "Pending",
         "verdict": "-",
+        "resume_skills": matched_skills,
         "timestamp": datetime.now().isoformat()
     }
     
@@ -41,6 +46,7 @@ def add_candidate(candidate_data):
             c["score"] = candidate["score"]
             c["status"] = "Pending"
             c["verdict"] = "-"
+            c["resume_skills"] = matched_skills
             c["timestamp"] = candidate["timestamp"]
             _save_db(candidates)
             return c
